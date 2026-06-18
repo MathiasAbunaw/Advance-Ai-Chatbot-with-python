@@ -60,5 +60,18 @@ class ChatbotAssistant:
         return words
 
     @staticmethod
-    def bag_of_words():
-        
+    def bag_of_words(words, vocabulary ): # Encode the word with 0 and 1 depending if they are apart of the vocabulary
+        return [1 if word in words else 0 for word in vocabulary]
+
+    def parse_intents(self):
+        lemmatiser = nltk.WordNetLemmatizer()
+
+        if os.path.exists(self.intents_path):
+            with open(self.intents_path, 'r') as f:
+                intents_data = json.load(f)
+
+                intents = []
+                intents_responses = []
+                documents = []
+
+                for intent in intents
