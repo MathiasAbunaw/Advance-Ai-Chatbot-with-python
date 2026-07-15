@@ -9,9 +9,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-nltk.download('punkt_tab') #This is needed for every nltk
+#nltk.download('punkt_tab') #This is needed for every nltk
 
 class ChatbotModel(nn.Module): #nn.module mean my class is inheriting PyTorch build in nn.Module class. BC PyTorch already build a neural network called nn.Module and by including it as a paremeter my chatbot starts off with everything that blueprint has
     def __init__(self, input_size, output_size):
@@ -32,8 +33,9 @@ class ChatbotModel(nn.Module): #nn.module mean my class is inheriting PyTorch bu
         x= self.dropout(x)
         x = self.fc3(x)
 
+        return x
 class ChatbotAssistant:
-    def __init__(self, intents_path, function_mapping = None):
+    def __init__(self, intents_path, function_mappings = None):
         self.model = None
         self.intents_path = intents_path
 
@@ -45,12 +47,12 @@ class ChatbotAssistant:
         self.intents = [] #This is what we will use inorder to assign the probabilities
         self.intents_responses = [] #This will be the list of intented responsis the bot will give or select
 
-        self.function_mapping = function_mapping
+        self.function_mappings = function_mappings
 
         self.X = None
         self.Y = None
 
-    @staticmethod
+    @staticmethod #Cant have a self
     def tokenize_and_lemmatize(text): #This will be used inorder to break down the text into their word stem. SO instead of having diff variants of the same word we will break it down to only contain the stem/origin of the word
         lemmatizer = nltk.WordNetLemmatizer()
 
@@ -59,9 +61,8 @@ class ChatbotAssistant:
         words = [lemmatizer.lemmatize(word.lower()) for word in words] 
         return words
 
-    @staticmethod
-    def bag_of_words(words, vocabulary ): # Encode the word with 0 and 1 depending if they are apart of the vocabulary
-        return [1 if word in words else 0 for word in vocabulary]
+    def bag_of_words(self, words): # Encode the word with 0 and 1 depending if they are apart of the vocabulary
+        return [1 if word in words else 0 for word in self.vocabulary]
 
     def parse_intents(self):
         lemmatiser = nltk.WordNetLemmatizer()
@@ -72,7 +73,6 @@ class ChatbotAssistant:
 
                 self.intents = []
                 self.intents_responses = {}
-                self.documents = []
 
                 for intent in intents_data['intents']: #This will load all and only the intents within the json file
                     if intent['tag'] not in self.intents: #If the intents tags is not within the intents list then we will add it
@@ -85,73 +85,95 @@ class ChatbotAssistant:
 
                 self.vocabulary = sorted(set(self.vocabulary))
 
-        def prepare_data(Self): #This will be used inorder to turn the values into zero and one inorder 0 for useless word and 1 for important word
-            bags = []
-            indices = []
-            for document in self.documents:
-                words = document[0]
-                bag = self.bag_of_words(words)
+    def prepare_data(self): #This will be used inorder to turn the values into zero and one inorder 0 for useless word and 1 for important word
+        bags = []
+        indices = []
+        for document in self.documents:
+            words = document[0]
+            bag = self.bag_of_words(words)
 
-                intent_index = self.intents.index(document[1])
+            intent_index = self.intents.index(document[1])
 
-                bags.append(bag)
-                indices.append(intent_index)
-            self.X = np.array(bag)
-            self.y = np.array(indices)
-        def train_model(self, batch_size, lr, epochs): #Lr: is how quickly out model is going to move into the direction of steapest decent, Batch size: How many instants we are going to parelel, Epochs: How many we time we are going to see the same data. 
-            X_tensor = torch.tensor(self.X, dtype= torch.float32)
-            y_tensor = torch.tensor(self.y, dype=torch.long)
+            bags.append(bag)
+            indices.append(intent_index)
+        self.X = np.array(bags)
+        self.y = np.array(indices)
+    def train_model(self, batch_size, lr, epochs): #Lr: is how quickly out model is going to move into the direction of steapest decent, Batch size: How many instants we are going to parelel, Epochs: How many we time we are going to see the same data. 
+        X_tensor = torch.tensor(self.X, dtype= torch.float32)
+        y_tensor = torch.tensor(self.y, dtype=torch.long)
 
-            dataset = TensorDataset(X_tensor, y_tensor)
-            loader = DataLoader(dataset, batch_size= batch_size, shuffle= True)
+        dataset = TensorDataset(X_tensor, y_tensor)
+        loader = DataLoader(dataset, batch_size= batch_size, shuffle= True)
 
-            self.model = ChatbotModel(self.X.shape[1], len(self.intents))
+        self.model = ChatbotModel(self.X.shape[1], len(self.intents))
 
-            criterion = nn.CrossEntropyLoss()
-            optimizer = optim.Adam(self.model.parameters(), lr= lr)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(self.model.parameters(), lr= lr)
 
-            for epoch in range(epochs):
-                running_loss = 0.0
+        for epoch in range(epochs):
+            running_loss = 0.0
 
-                for batch_X, batch_y in loader:
-                    optimizer.zero_grad()
-                    output = self.model(batch_X)
-                    loss = criterion(outputs, batch_y)
-                    loss.backward()
-                    running_loss += loss
+            for batch_X, batch_y in loader:
+                optimizer.zero_grad()
+                outputs = self.model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss
 
-                print(f"Epoch {epoch+ 1}: Loss: {running_loss/ keb(loader):.4f}")
-            def save_model(self, model_path, dimensions_path):
-                torch.save(self.model.state_dict(), model_path)
+            print(f"Epoch {epoch+ 1}: Loss: {running_loss/ len(loader):.4f}")
+    def save_model(self, model_path, dimensions_path):
+        torch.save(self.model.state_dict(), model_path)
 
-                with open(dimension_path, 'w') as f:
-                    json.dump({'input_size': self.X.shape[1], 'output_size': len(self.intents)}, f)
+        with open(dimensions_path, 'w') as f:
+            json.dump({'input_size': self.X.shape[1], 'output_size': len(self.intents)}, f)
 
-            def load_model(self, model_path, dimentsions_path):
-                with open(dimensions_path, 'r') as f:
-                    dimensions = json.load(f)
-            
-                self.model = ChatbotModel(dimensions['input_size'], dimensions['output_size'])
-                self.model.load_state_dic(torch.load(model_path, weight_only = True))
+    def load_model(self, model_path, dimensions_path):
+        with open(dimensions_path, 'r') as f:
+            dimensions = json.load(f)
 
-            def process_message(self, input_message):
-                words = self.tokenize_andlemmatize(input_message)
-                bag = self.bag_of_words(input_message)
+        self.model = ChatbotModel(dimensions['input_size'], dimensions['output_size'])
+        self.model.load_state_dict(torch.load(model_path, weight_only = True))
 
-                bag_tensor = torch.tensor([bag], dtype = torch.float32)
+    def process_message(self, input_message):
+        words = self.tokenize_and_lemmatize(input_message)
+        bag = self.bag_of_words(words)
 
-                self.model.eval()
-                with torch.no_grad():
-                    predictions = self.model(bag_tensor)
+        bag_tensor = torch.tensor([bag], dtype = torch.float32)
 
-                predicted_class_index = torch.argmax(predictions, dim = 1).item()
-                predicted_intent = self.intents[predicted_class_index]
+        self.model.eval()
+        with torch.no_grad():
+            predictions = self.model(bag_tensor)
 
-                if self.function_mappings:
-                    if predicted_intent in self.function_mappings:
-                        self.function_mappings[predicted_intent]()
+        predicted_class_index = torch.argmax(predictions, dim = 1).item()
+        predicted_intent = self.intents[predicted_class_index]
 
-                if self.intents_responses[predicted_intent]:
-                    return random.choice(self.intents_responses[predicted_intent])
-                    
+        if self.function_mappings:
+            if predicted_intent in self.function_mappings:
+                self.function_mappings[predicted_intent]()
 
+        if self.intents_responses[predicted_intent]:
+            return random.choice(self.intents_responses[predicted_intent])
+        else:
+            return None
+                
+
+def get_stocks():
+    stocks = ['APPL', 'Meta', 'NVDA', 'GS', 'MSFT']
+    return random.sample(stocks, 3)
+
+if __name__ == '__main__':
+    assistant = ChatbotAssistant('intents.json', function_mappings = {'stocks': get_stocks})
+    assistant.parse_intents()
+    assistant.prepare_data()
+    assistant.train_model(batch_size = 8, lr = 0.001, epochs = 100)
+
+    assistant.save_model('chatbot_model.pth', 'dimensions.json')
+
+    while True:
+        message = input("Enter your message:")
+
+        if message == "/quit":
+            break
+
+        print(assistant.process_message(message))
